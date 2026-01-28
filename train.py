@@ -89,7 +89,7 @@ def seed_everything(seed=42):
     tf.random.set_seed(seed)
 
 
-def get_strategy(device='GPU'):
+def get_strategy(device='GPU', require_gpu=True):
     """
     Get TensorFlow distribution strategy.
     Modified to use GPU instead of TPU.
@@ -98,6 +98,11 @@ def get_strategy(device='GPU'):
     
     if device == "GPU" or device == "CPU":
         ngpu = len(tf.config.experimental.list_physical_devices('GPU'))
+        if device == "GPU" and ngpu == 0 and require_gpu:
+            raise RuntimeError(
+                "No GPU detected. Install CUDA/cuDNN and GPU-enabled TensorFlow, "
+                "or pass --allow_cpu to run on CPU."
+            )
         if ngpu > 1:
             print(f"Using {ngpu} GPUs with MirroredStrategy")
             strategy = tf.distribute.MirroredStrategy()
@@ -793,6 +798,8 @@ def main():
     parser.add_argument("--device", type=str, default="GPU",
                        choices=["GPU", "CPU"],
                        help="Device to use")
+    parser.add_argument("--allow_cpu", action="store_true",
+                       help="Allow CPU training if no GPU is available")
     parser.add_argument("--loggers", type=str, nargs="+", default=["wandb"],
                        choices=["wandb"],
                        help="Loggers to use")
@@ -805,7 +812,7 @@ def main():
     wandb_run = None
     
     # Get strategy
-    strategy, N_REPLICAS, IS_TPU = get_strategy(device=args.device)
+    strategy, N_REPLICAS, IS_TPU = get_strategy(device=args.device, require_gpu=not args.allow_cpu)
     
     # Adjust batch size and learning rate based on number of replicas
     batch_size = args.batch_size * N_REPLICAS

@@ -5,6 +5,11 @@ see: https://www.kaggle.com/competitions/asl-signs/discussion/406684
 ## Run as Python
 This repo includes a Python version of the notebook in `train.py`.
 
+Install `tf-utils` (required):
+```
+pip install -q git+https://github.com/hoyso48/tf-utils@main
+```
+
 Example:
 ```
 python train.py \
