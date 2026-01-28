@@ -182,10 +182,8 @@ class Preprocess(tf.keras.layers.Layer):
         self.point_landmarks = point_landmarks
 
     def call(self, inputs):
-        if tf.rank(inputs) == 3:
-            x = inputs[None, ...]
-        else:
-            x = inputs
+        is_rank3 = tf.equal(tf.rank(inputs), 3)
+        x = tf.cond(is_rank3, lambda: inputs[None, ...], lambda: inputs)
         
         mean = tf_nan_mean(tf.gather(x, [17], axis=2), axis=[1, 2], keepdims=True)
         mean = tf.where(tf.math.is_nan(mean), tf.constant(0.5, x.dtype), mean)
@@ -883,7 +881,7 @@ def main():
             wandb_run = wandb.init(
                 project=args.wandb_project,
                 tags=[f"fold{args.fold}", f"seed{args.seed}"],
-                config=vars(CFG),
+                config=dict(vars(CFG)),
                 mode=os.environ.get('WANDB_MODE', 'online')
             )
             print(f"✅ Wandb initialized: {wandb_run.name}")
