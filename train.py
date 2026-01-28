@@ -834,35 +834,37 @@ def main():
     
     # Configuration
     class CFG:
-        n_splits = 5
-        save_output = True
-        output_dir = args.output_dir
-        train_filenames = train_filenames
-        
-        seed = args.seed
-        verbose = 2
-        
-        max_len = MAX_LEN
-        replicas = N_REPLICAS
-        lr = lr
-        weight_decay = 0.1
-        lr_min = 1e-6
-        epoch = args.epoch
-        warmup = 0
-        batch_size = batch_size
-        snapshot_epochs = []
-        swa_epochs = []
-        
-        fp16 = True
-        fgm = False
-        awp = True
-        awp_lambda = 0.2
-        awp_start_epoch = 15
-        dropout_start_epoch = 15
-        resume = 0
-        decay_type = 'cosine'
-        dim = args.dim
-        comment = f'islr-fp16-{args.dim}-{N_REPLICAS}-seed{args.seed}'
+        pass
+    
+    CFG.n_splits = 5
+    CFG.save_output = True
+    CFG.output_dir = args.output_dir
+    CFG.train_filenames = train_filenames
+    
+    CFG.seed = args.seed
+    CFG.verbose = 2
+    
+    CFG.max_len = MAX_LEN
+    CFG.replicas = N_REPLICAS
+    CFG.lr = lr
+    CFG.weight_decay = 0.1
+    CFG.lr_min = 1e-6
+    CFG.epoch = args.epoch
+    CFG.warmup = 0
+    CFG.batch_size = batch_size
+    CFG.snapshot_epochs = []
+    CFG.swa_epochs = []
+    
+    CFG.fp16 = True
+    CFG.fgm = False
+    CFG.awp = True
+    CFG.awp_lambda = 0.2
+    CFG.awp_start_epoch = 15
+    CFG.dropout_start_epoch = 15
+    CFG.resume = 0
+    CFG.decay_type = 'cosine'
+    CFG.dim = args.dim
+    CFG.comment = f'islr-fp16-{args.dim}-{N_REPLICAS}-seed{args.seed}'
     
     # Create output directory
     os.makedirs(CFG.output_dir, exist_ok=True)
