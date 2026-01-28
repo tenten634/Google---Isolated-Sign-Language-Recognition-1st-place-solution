@@ -875,13 +875,20 @@ def main():
     # Initialize loggers
     loggers_to_use = args.loggers
     
+    # Build a clean config dict for logging (avoid non-serializable class attrs)
+    cfg_dict = {
+        key: getattr(CFG, key)
+        for key in dir(CFG)
+        if not key.startswith("_") and not callable(getattr(CFG, key))
+    }
+    
     # Initialize wandb
     if 'wandb' in loggers_to_use and WANDB_AVAILABLE:
         try:
             wandb_run = wandb.init(
                 project=args.wandb_project,
                 tags=[f"fold{args.fold}", f"seed{args.seed}"],
-                config=dict(vars(CFG)),
+                config=cfg_dict,
                 mode=os.environ.get('WANDB_MODE', 'online')
             )
             print(f"✅ Wandb initialized: {wandb_run.name}")
