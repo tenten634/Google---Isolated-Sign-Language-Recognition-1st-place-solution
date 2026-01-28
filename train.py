@@ -813,6 +813,8 @@ def main():
     parser.add_argument("--device", type=str, default="GPU",
                        choices=["GPU", "CPU"],
                        help="Device to use")
+    parser.add_argument("--gpus", type=int, default=1,
+                       help="Number of GPUs to use (default: 1)")
     parser.add_argument("--allow_cpu", action="store_true",
                        help="Allow CPU training if no GPU is available")
     parser.add_argument("--loggers", type=str, nargs="+", default=["wandb"],
@@ -822,6 +824,22 @@ def main():
                        help="Wandb project name")
     
     args = parser.parse_args()
+
+    # Limit visible GPUs before any strategy or device initialization
+    if args.device == "GPU":
+        available_gpus = tf.config.list_physical_devices("GPU")
+        if not available_gpus:
+            raise RuntimeError("No GPUs found but device=GPU was requested.")
+        if args.gpus is not None:
+            if args.gpus < 1:
+                raise ValueError("--gpus must be >= 1 when device=GPU")
+            if args.gpus > len(available_gpus):
+                raise RuntimeError(
+                    f"Requested {args.gpus} GPUs, but only {len(available_gpus)} available."
+                )
+            tf.config.set_visible_devices(available_gpus[:args.gpus], "GPU")
+            for gpu in available_gpus[:args.gpus]:
+                tf.config.experimental.set_memory_growth(gpu, True)
 
     # Initialize logger handles for this run
     wandb_run = None
