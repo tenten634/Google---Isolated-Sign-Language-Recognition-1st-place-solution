@@ -97,7 +97,8 @@ def get_strategy(device='GPU', require_gpu=True):
     IS_TPU = False
     
     if device == "GPU" or device == "CPU":
-        ngpu = len(tf.config.experimental.list_physical_devices('GPU'))
+        visible_gpus = tf.config.list_logical_devices('GPU')
+        ngpu = len(visible_gpus)
         if device == "GPU" and ngpu == 0 and require_gpu:
             raise RuntimeError(
                 "No GPU detected. Install CUDA/cuDNN and GPU-enabled TensorFlow, "
@@ -837,9 +838,12 @@ def main():
                 raise RuntimeError(
                     f"Requested {args.gpus} GPUs, but only {len(available_gpus)} available."
                 )
-            tf.config.set_visible_devices(available_gpus[:args.gpus], "GPU")
-            for gpu in available_gpus[:args.gpus]:
-                tf.config.experimental.set_memory_growth(gpu, True)
+            try:
+                tf.config.set_visible_devices(available_gpus[:args.gpus], "GPU")
+                for gpu in available_gpus[:args.gpus]:
+                    tf.config.experimental.set_memory_growth(gpu, True)
+            except RuntimeError as e:
+                print(f"⚠️  Failed to set visible GPUs before initialization: {e}")
 
     # Initialize logger handles for this run
     wandb_run = None
