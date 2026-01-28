@@ -597,6 +597,8 @@ def train_fold(CFG, fold, train_files, valid_files=None, strategy=None, summary=
     tf.keras.backend.clear_session()
     gc.collect()
     tf.config.optimizer.set_jit(True)
+    if CFG.run_eagerly:
+        tf.config.run_functions_eagerly(True)
     
     if CFG.fp16:
         try:
@@ -688,7 +690,8 @@ def train_fold(CFG, fold, train_files, valid_files=None, strategy=None, summary=
             optimizer=opt,
             loss=[tf.keras.losses.CategoricalCrossentropy(from_logits=True, label_smoothing=0.1)],
             metrics=[tf.keras.metrics.CategoricalAccuracy()],
-            steps_per_execution=steps_per_epoch,
+            steps_per_execution=1 if CFG.run_eagerly else steps_per_epoch,
+            run_eagerly=CFG.run_eagerly,
         )
     
     if summary:
@@ -888,8 +891,13 @@ def main():
     CFG.decay_type = 'cosine'
     CFG.dim = args.dim
     CFG.comment = f'islr-fp16-{args.dim}-{N_REPLICAS}-seed{args.seed}'
+    CFG.run_eagerly = False
 
     # Keras 2.x compatibility (no special handling needed)
+    # Avoid merge_call errors when using AWP/FGM with MirroredStrategy
+    if N_REPLICAS > 1 and (CFG.awp or CFG.fgm):
+        CFG.run_eagerly = True
+        print("⚠️  Enabling run_eagerly for AWP/FGM under MirroredStrategy")
     
     # Create output directory
     os.makedirs(CFG.output_dir, exist_ok=True)
