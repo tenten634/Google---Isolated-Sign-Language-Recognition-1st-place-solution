@@ -750,7 +750,7 @@ def main():
                        help="Base data directory for downloaded datasets")
     parser.add_argument("--tfrecords_subdir", type=str, default="ISLR-5fold",
                        help="Subdirectory under data_dir containing TFRecords")
-    parser.add_argument("--competition_subdir", type=str, default="Google - Isolated Sign Language Recognition",
+    parser.add_argument("--competition_subdir", type=str, default="Google-Isolated-Sign-Language-Recognition",
                        help="Subdirectory under data_dir containing competition files")
     parser.add_argument("--train_filenames", type=str, default=None,
                        help="Glob pattern for TFRecord files (e.g., 'data/*.tfrecords')")

@@ -18,7 +18,7 @@ If you place datasets under `datammount/`, defaults are:
 python train.py \
   --data_dir "./datammount" \
   --tfrecords_subdir "ISLR-5fold" \
-  --competition_subdir "Google - Isolated Sign Language Recognition"
+  --competition_subdir "Google-Isolated-Sign-Language-Recognition"
 ```
 
 ## Dataset notes (Kaggle)
