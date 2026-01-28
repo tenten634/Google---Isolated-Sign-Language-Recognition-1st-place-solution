@@ -41,10 +41,8 @@ except Exception as e:
     print(f"⚠️  tf_utils not available - falling back to standard schedules ({e})")
     TF_UTILS_AVAILABLE = False
 
-# Initialize wandb, comet, and mlflow (optional)
+# Initialize wandb (optional)
 wandb_run = None
-comet_experiment = None
-mlflow_run = None
 
 # Try to import wandb
 try:
@@ -54,21 +52,6 @@ except ImportError:
     WANDB_AVAILABLE = False
     print("⚠️  Wandb not available - wandb logging will be disabled")
 
-# Try to import comet
-try:
-    from comet_ml import Experiment
-    COMET_AVAILABLE = True
-except ImportError:
-    COMET_AVAILABLE = False
-    print("⚠️  Comet not available - comet logging will be disabled")
-
-# Try to import mlflow
-try:
-    import mlflow
-    MLFLOW_AVAILABLE = True
-except ImportError:
-    MLFLOW_AVAILABLE = False
-    print("⚠️  MLflow not available - mlflow logging will be disabled")
 
 
 # Constants
@@ -516,8 +499,6 @@ class MultiHeadSelfAttention(tf.keras.layers.Layer):
         attn = tf.keras.layers.Softmax(axis=-1)(attn, mask=mask)
         attn = self.drop1(attn)
         
-        if attn.dtype != v.dtype:
-            v = tf.cast(v, attn.dtype)
         x = attn @ v
         x = tf.keras.layers.Reshape((-1, self.dim))(tf.keras.layers.Permute((2, 1, 3))(x))
         x = self.proj(x)
@@ -580,12 +561,10 @@ def get_model(max_len=64, dropout_step=0, dim=192):
 
 
 class LoggingCallback(tf.keras.callbacks.Callback):
-    """Custom callback for logging to wandb, comet, and mlflow."""
-    def __init__(self, wandb_run=None, comet_experiment=None, mlflow_run=None):
+    """Custom callback for logging to wandb."""
+    def __init__(self, wandb_run=None):
         super().__init__()
         self.wandb_run = wandb_run
-        self.comet_experiment = comet_experiment
-        self.mlflow_run = mlflow_run
     
     def on_epoch_end(self, epoch, logs=None):
         logs = logs or {}
@@ -594,19 +573,15 @@ class LoggingCallback(tf.keras.callbacks.Callback):
         for key, value in logs.items():
             if self.wandb_run:
                 self.wandb_run.log({key: value}, step=step)
-            if self.comet_experiment:
-                self.comet_experiment.log_metric(key, value, step=step)
-            if self.mlflow_run:
-                mlflow.log_metric(key, value, step=step)
 
 
 def train_fold(CFG, fold, train_files, valid_files=None, strategy=None, summary=True,
-               wandb_run=None, comet_experiment=None, mlflow_run=None):
+               wandb_run=None):
     """Train a single fold."""
     seed_everything(CFG.seed)
     tf.keras.backend.clear_session()
     gc.collect()
-    tf.config.optimizer.set_jit(CFG.use_xla)
+    tf.config.optimizer.set_jit(True)
     
     if CFG.fp16:
         try:
@@ -629,10 +604,6 @@ def train_fold(CFG, fold, train_files, valid_files=None, strategy=None, summary=
                                      drop_remainder=False, augment=True, repeat=True, shuffle=32768)
         valid_ds = None
         valid_files = []
-    
-    # Ensure training dataset is infinite to avoid StopIteration on later epochs
-    if train_ds is not None:
-        train_ds = train_ds.repeat()
     
     num_train = count_data_items(train_files)
     num_valid = count_data_items(valid_files)
@@ -679,8 +650,11 @@ def train_fold(CFG, fold, train_files, valid_files=None, strategy=None, summary=
                 decay_steps=total_steps,
                 alpha=lr_min_ratio,
             )
-            # Keras AdamW expects a float weight_decay, not a schedule
-            decay_schedule = None
+            decay_schedule = tf.keras.optimizers.schedules.CosineDecay(
+                initial_learning_rate=CFG.lr * CFG.weight_decay,
+                decay_steps=total_steps,
+                alpha=lr_min_ratio,
+            )
         
         if TFA_AVAILABLE:
             opt = tfa.optimizers.RectifiedAdam(
@@ -699,7 +673,7 @@ def train_fold(CFG, fold, train_files, valid_files=None, strategy=None, summary=
             optimizer=opt,
             loss=[tf.keras.losses.CategoricalCrossentropy(from_logits=True, label_smoothing=0.1)],
             metrics=[tf.keras.metrics.CategoricalAccuracy()],
-            steps_per_execution=1,
+            steps_per_execution=steps_per_epoch,
         )
     
     if summary:
@@ -715,7 +689,7 @@ def train_fold(CFG, fold, train_files, valid_files=None, strategy=None, summary=
     
     if CFG.resume:
         print(f'resume from epoch{CFG.resume}')
-        model.load_weights(f'{CFG.output_dir}/{CFG.comment}-fold{fold}-last.weights.h5')
+        model.load_weights(f'{CFG.output_dir}/{CFG.comment}-fold{fold}-last.h5')
         if train_ds is not None:
             model.evaluate(train_ds.take(steps_per_epoch))
         if valid_ds is not None:
@@ -724,17 +698,17 @@ def train_fold(CFG, fold, train_files, valid_files=None, strategy=None, summary=
     callbacks = []
     
     # Add logging callback
-    logging_callback = LoggingCallback(wandb_run=wandb_run, comet_experiment=comet_experiment, mlflow_run=mlflow_run)
+    logging_callback = LoggingCallback(wandb_run=wandb_run)
     callbacks.append(logging_callback)
     
     if CFG.save_output:
         logger = tf.keras.callbacks.CSVLogger(f'{CFG.output_dir}/{CFG.comment}-fold{fold}-logs.csv')
         sv_loss = tf.keras.callbacks.ModelCheckpoint(
-            f'{CFG.output_dir}/{CFG.comment}-fold{fold}-best.weights.h5',
+            f'{CFG.output_dir}/{CFG.comment}-fold{fold}-best.h5',
             monitor='val_loss', verbose=0, save_best_only=True,
             save_weights_only=True, mode='min', save_freq='epoch')
         callbacks.append(logger)
-        if TF_UTILS_AVAILABLE and CFG.use_tf_utils_callbacks:
+        if TF_UTILS_AVAILABLE:
             snap = Snapshot(f'{CFG.output_dir}/{CFG.comment}-fold{fold}', CFG.snapshot_epochs)
             swa = SWA(
                 f'{CFG.output_dir}/{CFG.comment}-fold{fold}',
@@ -761,7 +735,7 @@ def train_fold(CFG, fold, train_files, valid_files=None, strategy=None, summary=
     
     if CFG.save_output:
         try:
-            model.load_weights(f'{CFG.output_dir}/{CFG.comment}-fold{fold}-best.weights.h5')
+            model.load_weights(f'{CFG.output_dir}/{CFG.comment}-fold{fold}-best.h5')
         except:
             pass
     
@@ -774,7 +748,7 @@ def train_fold(CFG, fold, train_files, valid_files=None, strategy=None, summary=
 
 
 def train_folds(CFG, folds, strategy=None, summary=True,
-                wandb_run=None, comet_experiment=None, mlflow_run=None):
+                wandb_run=None):
     """Train multiple folds."""
     for fold in folds:
         if fold != 'all':
@@ -786,7 +760,7 @@ def train_folds(CFG, folds, strategy=None, summary=True,
             valid_files = None
         
         train_fold(CFG, fold, train_files, valid_files, strategy=strategy, summary=summary,
-                  wandb_run=wandb_run, comet_experiment=comet_experiment, mlflow_run=mlflow_run)
+                  wandb_run=wandb_run)
     return
 
 
@@ -820,21 +794,15 @@ def main():
                        choices=["GPU", "CPU"],
                        help="Device to use")
     parser.add_argument("--loggers", type=str, nargs="+", default=["wandb"],
-                       choices=["wandb", "comet", "mlflow"],
+                       choices=["wandb"],
                        help="Loggers to use")
     parser.add_argument("--wandb_project", type=str, default="isl-1",
                        help="Wandb project name")
-    parser.add_argument("--comet_project", type=str, default="isl-1",
-                       help="Comet project name")
-    parser.add_argument("--mlflow_experiment", type=str, default="/Shared/isl-1",
-                       help="MLflow experiment path")
     
     args = parser.parse_args()
 
     # Initialize logger handles for this run
     wandb_run = None
-    comet_experiment = None
-    mlflow_run = None
     
     # Get strategy
     strategy, N_REPLICAS, IS_TPU = get_strategy(device=args.device)
@@ -901,21 +869,8 @@ def main():
     CFG.decay_type = 'cosine'
     CFG.dim = args.dim
     CFG.comment = f'islr-fp16-{args.dim}-{N_REPLICAS}-seed{args.seed}'
-    CFG.use_xla = True
-    CFG.use_tf_utils_callbacks = True
 
-    # Disable AWP/FGM and mixed precision on Keras 3.x (compatibility)
-    try:
-        keras_version = tf.keras.__version__
-        if keras_version and keras_version.startswith("3."):
-            CFG.fgm = False
-            CFG.awp = False
-            CFG.fp16 = False
-            CFG.use_xla = False
-            CFG.use_tf_utils_callbacks = False
-            print("⚠️  Keras 3 detected - disabling AWP/FGM for compatibility")
-    except Exception:
-        pass
+    # Keras 2.x compatibility (no special handling needed)
     
     # Create output directory
     os.makedirs(CFG.output_dir, exist_ok=True)
@@ -951,8 +906,6 @@ def main():
         "decay_type",
         "dim",
         "comment",
-        "use_xla",
-        "use_tf_utils_callbacks",
     ]
     cfg_dict = {key: getattr(CFG, key) for key in cfg_keys}
     
@@ -971,63 +924,14 @@ def main():
             print(f"⚠️  Wandb initialization failed: {e}")
             wandb_run = None
     
-    # Initialize comet
-    if 'comet' in loggers_to_use and COMET_AVAILABLE:
-        try:
-            comet_api_key = os.environ.get('COMET_API_KEY')
-            if comet_api_key:
-                comet_experiment = Experiment(
-                    api_key=comet_api_key,
-                    project_name=args.comet_project,
-                    workspace=os.environ.get('COMET_WORKSPACE', None),
-                    auto_param_logging=True,
-                    auto_metric_logging=False
-                )
-                comet_experiment.log_parameters(vars(CFG))
-                print(f"✅ Comet initialized: {comet_experiment.get_key()}")
-                print(f"   URL: {comet_experiment.url}")
-            else:
-                print("⚠️  COMET_API_KEY not set - comet logging disabled")
-                comet_experiment = None
-        except Exception as e:
-            print(f"⚠️  Comet initialization failed: {e}")
-            comet_experiment = None
-    
-    # Initialize MLflow
-    if 'mlflow' in loggers_to_use and MLFLOW_AVAILABLE:
-        try:
-            databricks_host = os.environ.get('DATABRICKS_HOST')
-            databricks_token = os.environ.get('DATABRICKS_TOKEN')
-            
-            if databricks_host and databricks_token:
-                mlflow.set_tracking_uri("databricks")
-                mlflow.set_experiment(args.mlflow_experiment)
-                
-                run_name = f"fold{args.fold}_seed{args.seed}"
-                mlflow_run = mlflow.start_run(run_name=run_name)
-                mlflow.log_params(vars(CFG))
-                print(f"✅ MLflow initialized: {run_name}")
-                print(f"   Run ID: {mlflow_run.info.run_id}")
-                print(f"   Experiment: {args.mlflow_experiment}")
-            else:
-                print("⚠️  DATABRICKS_HOST or DATABRICKS_TOKEN not set - mlflow logging disabled")
-                mlflow_run = None
-        except Exception as e:
-            print(f"⚠️  MLflow initialization failed: {e}")
-            mlflow_run = None
-    
     # Train
     folds = [args.fold] if args.fold != -1 else ['all']
     train_folds(CFG, folds, strategy=strategy, summary=True,
-               wandb_run=wandb_run, comet_experiment=comet_experiment, mlflow_run=mlflow_run)
+               wandb_run=wandb_run)
     
     # Finish loggers
     if wandb_run:
         wandb_run.finish()
-    if comet_experiment:
-        comet_experiment.end()
-    if mlflow_run:
-        mlflow.end_run()
     
     print("Training completed!")
 
