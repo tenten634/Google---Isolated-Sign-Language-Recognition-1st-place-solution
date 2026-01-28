@@ -788,7 +788,7 @@ def main():
     parser.add_argument("--device", type=str, default="GPU",
                        choices=["GPU", "CPU"],
                        help="Device to use")
-    parser.add_argument("--loggers", type=str, nargs="+", default=["wandb", "comet", "mlflow"],
+    parser.add_argument("--loggers", type=str, nargs="+", default=["wandb"],
                        choices=["wandb", "comet", "mlflow"],
                        help="Loggers to use")
     parser.add_argument("--wandb_project", type=str, default="isl-1",
@@ -799,6 +799,11 @@ def main():
                        help="MLflow experiment path")
     
     args = parser.parse_args()
+
+    # Initialize logger handles for this run
+    wandb_run = None
+    comet_experiment = None
+    mlflow_run = None
     
     # Get strategy
     strategy, N_REPLICAS, IS_TPU = get_strategy(device=args.device)
