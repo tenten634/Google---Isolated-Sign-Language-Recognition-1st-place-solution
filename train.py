@@ -606,7 +606,7 @@ def train_fold(CFG, fold, train_files, valid_files=None, strategy=None, summary=
     seed_everything(CFG.seed)
     tf.keras.backend.clear_session()
     gc.collect()
-    tf.config.optimizer.set_jit(True)
+    tf.config.optimizer.set_jit(CFG.use_xla)
     
     if CFG.fp16:
         try:
@@ -695,7 +695,7 @@ def train_fold(CFG, fold, train_files, valid_files=None, strategy=None, summary=
             optimizer=opt,
             loss=[tf.keras.losses.CategoricalCrossentropy(from_logits=True, label_smoothing=0.1)],
             metrics=[tf.keras.metrics.CategoricalAccuracy()],
-            steps_per_execution=steps_per_epoch,
+            steps_per_execution=1,
         )
     
     if summary:
@@ -897,13 +897,16 @@ def main():
     CFG.decay_type = 'cosine'
     CFG.dim = args.dim
     CFG.comment = f'islr-fp16-{args.dim}-{N_REPLICAS}-seed{args.seed}'
+    CFG.use_xla = True
 
-    # Disable AWP/FGM on Keras 3.x (tf_utils learners are incompatible)
+    # Disable AWP/FGM and mixed precision on Keras 3.x (compatibility)
     try:
         keras_version = tf.keras.__version__
         if keras_version and keras_version.startswith("3."):
             CFG.fgm = False
             CFG.awp = False
+            CFG.fp16 = False
+            CFG.use_xla = False
             print("⚠️  Keras 3 detected - disabling AWP/FGM for compatibility")
     except Exception:
         pass
@@ -942,6 +945,7 @@ def main():
         "decay_type",
         "dim",
         "comment",
+        "use_xla",
     ]
     cfg_dict = {key: getattr(CFG, key) for key in cfg_keys}
     
