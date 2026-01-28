@@ -424,11 +424,12 @@ class LateDropout(tf.keras.layers.Layer):
         self._train_counter = tf.Variable(0, dtype="int64", aggregation=agg, trainable=False)
 
     def call(self, inputs, training=False):
-        x = tf.cond(self._train_counter < self.start_step, 
-                   lambda: inputs, 
-                   lambda: self.dropout(inputs, training=training))
-        if training:
-            self._train_counter.assign_add(1)
+        if training is None:
+            training = tf.keras.backend.learning_phase()
+        dropout_out = self.dropout(inputs, training=training)
+        use_dropout = tf.cast(self._train_counter >= self.start_step, inputs.dtype)
+        x = use_dropout * dropout_out + (1 - use_dropout) * inputs
+        self._train_counter.assign_add(tf.cast(training, tf.int64))
         return x
 
 
