@@ -630,6 +630,10 @@ def train_fold(CFG, fold, train_files, valid_files=None, strategy=None, summary=
         valid_ds = None
         valid_files = []
     
+    # Ensure training dataset is infinite to avoid StopIteration on later epochs
+    if train_ds is not None:
+        train_ds = train_ds.repeat()
+    
     num_train = count_data_items(train_files)
     num_valid = count_data_items(valid_files)
     steps_per_epoch = num_train // CFG.batch_size
