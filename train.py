@@ -37,8 +37,8 @@ try:
     from tf_utils.callbacks import Snapshot, SWA
     from tf_utils.learners import FGM, AWP
     TF_UTILS_AVAILABLE = True
-except ImportError:
-    print("⚠️  tf_utils not available - install from: git+https://github.com/hoyso48/tf-utils@main")
+except Exception as e:
+    print(f"⚠️  tf_utils not available - falling back to standard schedules ({e})")
     TF_UTILS_AVAILABLE = False
 
 # Initialize wandb, comet, and mlflow (optional)
@@ -636,24 +636,48 @@ def train_fold(CFG, fold, train_files, valid_files=None, strategy=None, summary=
         dropout_step = CFG.dropout_start_epoch * steps_per_epoch
         model = get_model(max_len=CFG.max_len, dropout_step=dropout_step, dim=CFG.dim)
         
-        if not TF_UTILS_AVAILABLE:
-            raise ImportError("tf_utils package is required. Install with: pip install git+https://github.com/hoyso48/tf-utils@main")
-        
-        schedule = OneCycleLR(CFG.lr, CFG.epoch, warmup_epochs=CFG.epoch * CFG.warmup,
-                             steps_per_epoch=steps_per_epoch, resume_epoch=CFG.resume,
-                             decay_epochs=CFG.epoch, lr_min=CFG.lr_min,
-                             decay_type=CFG.decay_type, warmup_type='linear')
-        decay_schedule = OneCycleLR(CFG.lr * CFG.weight_decay, CFG.epoch,
-                                   warmup_epochs=CFG.epoch * CFG.warmup,
-                                   steps_per_epoch=steps_per_epoch, resume_epoch=CFG.resume,
-                                   decay_epochs=CFG.epoch, lr_min=CFG.lr_min * CFG.weight_decay,
-                                   decay_type=CFG.decay_type, warmup_type='linear')
-        
-        awp_step = CFG.awp_start_epoch * steps_per_epoch
-        if CFG.fgm:
-            model = FGM(model.input, model.output, delta=CFG.awp_lambda, eps=0., start_step=awp_step)
-        elif CFG.awp:
-            model = AWP(model.input, model.output, delta=CFG.awp_lambda, eps=0., start_step=awp_step)
+        if TF_UTILS_AVAILABLE:
+            schedule = OneCycleLR(
+                CFG.lr,
+                CFG.epoch,
+                warmup_epochs=CFG.epoch * CFG.warmup,
+                steps_per_epoch=steps_per_epoch,
+                resume_epoch=CFG.resume,
+                decay_epochs=CFG.epoch,
+                lr_min=CFG.lr_min,
+                decay_type=CFG.decay_type,
+                warmup_type='linear',
+            )
+            decay_schedule = OneCycleLR(
+                CFG.lr * CFG.weight_decay,
+                CFG.epoch,
+                warmup_epochs=CFG.epoch * CFG.warmup,
+                steps_per_epoch=steps_per_epoch,
+                resume_epoch=CFG.resume,
+                decay_epochs=CFG.epoch,
+                lr_min=CFG.lr_min * CFG.weight_decay,
+                decay_type=CFG.decay_type,
+                warmup_type='linear',
+            )
+            
+            awp_step = CFG.awp_start_epoch * steps_per_epoch
+            if CFG.fgm:
+                model = FGM(model.input, model.output, delta=CFG.awp_lambda, eps=0., start_step=awp_step)
+            elif CFG.awp:
+                model = AWP(model.input, model.output, delta=CFG.awp_lambda, eps=0., start_step=awp_step)
+        else:
+            total_steps = steps_per_epoch * CFG.epoch
+            lr_min_ratio = CFG.lr_min / CFG.lr if CFG.lr > 0 else 0.0
+            schedule = tf.keras.optimizers.schedules.CosineDecay(
+                initial_learning_rate=CFG.lr,
+                decay_steps=total_steps,
+                alpha=lr_min_ratio,
+            )
+            decay_schedule = tf.keras.optimizers.schedules.CosineDecay(
+                initial_learning_rate=CFG.lr * CFG.weight_decay,
+                decay_steps=total_steps,
+                alpha=lr_min_ratio,
+            )
         
         if TFA_AVAILABLE:
             opt = tfa.optimizers.RectifiedAdam(
@@ -706,13 +730,19 @@ def train_fold(CFG, fold, train_files, valid_files=None, strategy=None, summary=
             f'{CFG.output_dir}/{CFG.comment}-fold{fold}-best.h5',
             monitor='val_loss', verbose=0, save_best_only=True,
             save_weights_only=True, mode='min', save_freq='epoch')
-        snap = Snapshot(f'{CFG.output_dir}/{CFG.comment}-fold{fold}', CFG.snapshot_epochs)
-        swa = SWA(f'{CFG.output_dir}/{CFG.comment}-fold{fold}', CFG.swa_epochs,
-                 strategy=strategy, train_ds=train_ds, valid_ds=valid_ds,
-                 valid_steps=-(num_valid // -CFG.batch_size))
         callbacks.append(logger)
-        callbacks.append(snap)
-        callbacks.append(swa)
+        if TF_UTILS_AVAILABLE:
+            snap = Snapshot(f'{CFG.output_dir}/{CFG.comment}-fold{fold}', CFG.snapshot_epochs)
+            swa = SWA(
+                f'{CFG.output_dir}/{CFG.comment}-fold{fold}',
+                CFG.swa_epochs,
+                strategy=strategy,
+                train_ds=train_ds,
+                valid_ds=valid_ds,
+                valid_steps=-(num_valid // -CFG.batch_size),
+            )
+            callbacks.append(snap)
+            callbacks.append(swa)
         if fold != 'all':
             callbacks.append(sv_loss)
     
@@ -876,11 +906,35 @@ def main():
     loggers_to_use = args.loggers
     
     # Build a clean config dict for logging (avoid non-serializable class attrs)
-    cfg_dict = {
-        key: getattr(CFG, key)
-        for key in dir(CFG)
-        if not key.startswith("_") and not callable(getattr(CFG, key))
-    }
+    cfg_keys = [
+        "n_splits",
+        "save_output",
+        "output_dir",
+        "train_filenames",
+        "seed",
+        "verbose",
+        "max_len",
+        "replicas",
+        "lr",
+        "weight_decay",
+        "lr_min",
+        "epoch",
+        "warmup",
+        "batch_size",
+        "snapshot_epochs",
+        "swa_epochs",
+        "fp16",
+        "fgm",
+        "awp",
+        "awp_lambda",
+        "awp_start_epoch",
+        "dropout_start_epoch",
+        "resume",
+        "decay_type",
+        "dim",
+        "comment",
+    ]
+    cfg_dict = {key: getattr(CFG, key) for key in cfg_keys}
     
     # Initialize wandb
     if 'wandb' in loggers_to_use and WANDB_AVAILABLE:
