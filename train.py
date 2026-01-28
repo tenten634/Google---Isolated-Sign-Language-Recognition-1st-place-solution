@@ -675,11 +675,8 @@ def train_fold(CFG, fold, train_files, valid_files=None, strategy=None, summary=
                 decay_steps=total_steps,
                 alpha=lr_min_ratio,
             )
-            decay_schedule = tf.keras.optimizers.schedules.CosineDecay(
-                initial_learning_rate=CFG.lr * CFG.weight_decay,
-                decay_steps=total_steps,
-                alpha=lr_min_ratio,
-            )
+            # Keras AdamW expects a float weight_decay, not a schedule
+            decay_schedule = None
         
         if TFA_AVAILABLE:
             opt = tfa.optimizers.RectifiedAdam(
@@ -691,7 +688,7 @@ def train_fold(CFG, fold, train_files, valid_files=None, strategy=None, summary=
         else:
             opt = tf.keras.optimizers.AdamW(
                 learning_rate=schedule,
-                weight_decay=decay_schedule,
+                weight_decay=CFG.weight_decay,
             )
         
         model.compile(
@@ -900,6 +897,16 @@ def main():
     CFG.decay_type = 'cosine'
     CFG.dim = args.dim
     CFG.comment = f'islr-fp16-{args.dim}-{N_REPLICAS}-seed{args.seed}'
+
+    # Disable AWP/FGM on Keras 3.x (tf_utils learners are incompatible)
+    try:
+        keras_version = tf.keras.__version__
+        if keras_version and keras_version.startswith("3."):
+            CFG.fgm = False
+            CFG.awp = False
+            print("⚠️  Keras 3 detected - disabling AWP/FGM for compatibility")
+    except Exception:
+        pass
     
     # Create output directory
     os.makedirs(CFG.output_dir, exist_ok=True)
