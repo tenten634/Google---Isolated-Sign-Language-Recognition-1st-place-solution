@@ -21,7 +21,12 @@ from copy import copy
 import numpy as np
 import pandas as pd
 import tensorflow as tf
-import tensorflow_addons as tfa
+try:
+    import tensorflow_addons as tfa
+    TFA_AVAILABLE = True
+except ImportError:
+    TFA_AVAILABLE = False
+    print("⚠️  TensorFlow Addons not available - falling back to AdamW")
 import tensorflow.keras.mixed_precision as mixed_precision
 from tqdm import tqdm
 
@@ -652,8 +657,18 @@ def train_fold(CFG, fold, train_files, valid_files=None, strategy=None, summary=
         elif CFG.awp:
             model = AWP(model.input, model.output, delta=CFG.awp_lambda, eps=0., start_step=awp_step)
         
-        opt = tfa.optimizers.RectifiedAdam(learning_rate=schedule, weight_decay=decay_schedule, sma_threshold=4)
-        opt = tfa.optimizers.Lookahead(opt, sync_period=5)
+        if TFA_AVAILABLE:
+            opt = tfa.optimizers.RectifiedAdam(
+                learning_rate=schedule,
+                weight_decay=decay_schedule,
+                sma_threshold=4,
+            )
+            opt = tfa.optimizers.Lookahead(opt, sync_period=5)
+        else:
+            opt = tf.keras.optimizers.AdamW(
+                learning_rate=schedule,
+                weight_decay=decay_schedule,
+            )
         
         model.compile(
             optimizer=opt,
