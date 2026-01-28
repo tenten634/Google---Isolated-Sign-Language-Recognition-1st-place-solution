@@ -428,9 +428,18 @@ class LateDropout(tf.keras.layers.Layer):
             training = tf.keras.backend.learning_phase()
         dropout_out = self.dropout(inputs, training=training)
         use_dropout = tf.cast(self._train_counter >= self.start_step, inputs.dtype)
-        x = use_dropout * dropout_out + (1 - use_dropout) * inputs
-        self._train_counter.assign_add(tf.cast(training, tf.int64))
-        return x
+        return use_dropout * dropout_out + (1 - use_dropout) * inputs
+
+
+class LateDropoutCounterCallback(tf.keras.callbacks.Callback):
+    """Increment LateDropout counters outside tf.function for MirroredStrategy."""
+    def __init__(self, model):
+        super().__init__()
+        self._late_dropout_layers = [layer for layer in model.layers if isinstance(layer, LateDropout)]
+
+    def on_train_batch_end(self, batch, logs=None):
+        for layer in self._late_dropout_layers:
+            layer._train_counter.assign_add(1)
 
 
 class CausalDWConv1D(tf.keras.layers.Layer):
@@ -706,6 +715,8 @@ def train_fold(CFG, fold, train_files, valid_files=None, strategy=None, summary=
     # Add logging callback
     logging_callback = LoggingCallback(wandb_run=wandb_run)
     callbacks.append(logging_callback)
+    # Track LateDropout step counter outside tf.function to avoid merge_call errors
+    callbacks.append(LateDropoutCounterCallback(model))
     
     if CFG.save_output:
         logger = tf.keras.callbacks.CSVLogger(f'{CFG.output_dir}/{CFG.comment}-fold{fold}-logs.csv')
