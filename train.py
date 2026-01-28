@@ -730,7 +730,7 @@ def train_fold(CFG, fold, train_files, valid_files=None, strategy=None, summary=
             monitor='val_loss', verbose=0, save_best_only=True,
             save_weights_only=True, mode='min', save_freq='epoch')
         callbacks.append(logger)
-        if TF_UTILS_AVAILABLE:
+        if TF_UTILS_AVAILABLE and CFG.use_tf_utils_callbacks:
             snap = Snapshot(f'{CFG.output_dir}/{CFG.comment}-fold{fold}', CFG.snapshot_epochs)
             swa = SWA(
                 f'{CFG.output_dir}/{CFG.comment}-fold{fold}',
@@ -898,6 +898,7 @@ def main():
     CFG.dim = args.dim
     CFG.comment = f'islr-fp16-{args.dim}-{N_REPLICAS}-seed{args.seed}'
     CFG.use_xla = True
+    CFG.use_tf_utils_callbacks = True
 
     # Disable AWP/FGM and mixed precision on Keras 3.x (compatibility)
     try:
@@ -907,6 +908,7 @@ def main():
             CFG.awp = False
             CFG.fp16 = False
             CFG.use_xla = False
+            CFG.use_tf_utils_callbacks = False
             print("⚠️  Keras 3 detected - disabling AWP/FGM for compatibility")
     except Exception:
         pass
@@ -946,6 +948,7 @@ def main():
         "dim",
         "comment",
         "use_xla",
+        "use_tf_utils_callbacks",
     ]
     cfg_dict = {key: getattr(CFG, key) for key in cfg_keys}
     
