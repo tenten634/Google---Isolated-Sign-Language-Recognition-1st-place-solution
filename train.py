@@ -695,7 +695,7 @@ def train_fold(CFG, fold, train_files, valid_files=None, strategy=None, summary=
         model.compile(
             optimizer=opt,
             loss=[tf.keras.losses.CategoricalCrossentropy(from_logits=True, label_smoothing=0.1)],
-            metrics=[[tf.keras.metrics.CategoricalAccuracy()]],
+            metrics=[tf.keras.metrics.CategoricalAccuracy()],
             steps_per_execution=steps_per_epoch,
         )
     
