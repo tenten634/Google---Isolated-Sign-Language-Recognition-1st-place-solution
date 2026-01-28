@@ -712,7 +712,7 @@ def train_fold(CFG, fold, train_files, valid_files=None, strategy=None, summary=
     
     if CFG.resume:
         print(f'resume from epoch{CFG.resume}')
-        model.load_weights(f'{CFG.output_dir}/{CFG.comment}-fold{fold}-last.h5')
+        model.load_weights(f'{CFG.output_dir}/{CFG.comment}-fold{fold}-last.weights.h5')
         if train_ds is not None:
             model.evaluate(train_ds.take(steps_per_epoch))
         if valid_ds is not None:
@@ -727,7 +727,7 @@ def train_fold(CFG, fold, train_files, valid_files=None, strategy=None, summary=
     if CFG.save_output:
         logger = tf.keras.callbacks.CSVLogger(f'{CFG.output_dir}/{CFG.comment}-fold{fold}-logs.csv')
         sv_loss = tf.keras.callbacks.ModelCheckpoint(
-            f'{CFG.output_dir}/{CFG.comment}-fold{fold}-best.h5',
+            f'{CFG.output_dir}/{CFG.comment}-fold{fold}-best.weights.h5',
             monitor='val_loss', verbose=0, save_best_only=True,
             save_weights_only=True, mode='min', save_freq='epoch')
         callbacks.append(logger)
@@ -758,7 +758,7 @@ def train_fold(CFG, fold, train_files, valid_files=None, strategy=None, summary=
     
     if CFG.save_output:
         try:
-            model.load_weights(f'{CFG.output_dir}/{CFG.comment}-fold{fold}-best.h5')
+            model.load_weights(f'{CFG.output_dir}/{CFG.comment}-fold{fold}-best.weights.h5')
         except:
             pass
     
