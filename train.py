@@ -906,7 +906,7 @@ def main():
     CFG.fp16 = True
     CFG.fgm = False
     CFG.awp = True
-    CFG.awp_lambda = 0.2
+    CFG.awp_lambda = 0.1
     CFG.awp_start_epoch = 15
     CFG.dropout_start_epoch = 15
     CFG.resume = 0
